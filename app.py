@@ -846,8 +846,8 @@ def normalize_kitchen_request(payload: dict[str, Any]) -> dict[str, Any]:
     tables = max(2, min(int(payload.get("tables", 3)), 8))
     chefs = max(2, min(int(payload.get("chefs", 4)), 10))
     hot_stations = max(1, min(int(payload.get("hot_stations", 2)), 6))
-    cold_stations = max(1, min(int(payload.get("cold_stations", 1)), 4))
-    soup_stations = max(1, min(int(payload.get("soup_stations", 1)), 3))
+    cold_stations = max(1, min(int(payload.get("cold_stations", 2)), 4))
+    soup_stations = max(1, min(int(payload.get("soup_stations", 2)), 3))
     steamers = max(1, min(int(payload.get("steamers", 1)), 3))
     arrival_window = max(10, min(int(payload.get("arrival_window", 30)), 90))
     start_time = str(payload.get("start_time", "18:00")).strip() or "18:00"

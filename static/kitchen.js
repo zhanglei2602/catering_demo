@@ -60,15 +60,15 @@ function collectConfig() {
 
 function createSlots(config) {
   return {
-    cold: Array.from({ length: config.cold_stations }, (_, index) => ({
-      slotId: `cold-${index + 1}`,
-      station: "cold",
-      busyUntil: 0,
-      currentTaskId: null,
-    })),
     hot: Array.from({ length: config.hot_stations }, (_, index) => ({
       slotId: `hot-${index + 1}`,
       station: "hot",
+      busyUntil: 0,
+      currentTaskId: null,
+    })),
+    cold: Array.from({ length: config.cold_stations }, (_, index) => ({
+      slotId: `cold-${index + 1}`,
+      station: "cold",
       busyUntil: 0,
       currentTaskId: null,
     })),
