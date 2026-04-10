@@ -4,8 +4,8 @@ const clockNode = document.querySelector("#sim-clock");
 const metricsRoot = document.querySelector("#metrics-root");
 const stationRoot = document.querySelector("#station-root");
 const roomRoot = document.querySelector("#room-root");
+const completedRoot = document.querySelector("#completed-root");
 const tablesRoot = document.querySelector("#tables-root");
-const eventRoot = document.querySelector("#event-root");
 const playToggleButton = document.querySelector("#play-toggle");
 const speedSelect = document.querySelector("#playback-speed");
 const addOrderButton = document.querySelector("#add-order-button");
@@ -37,14 +37,13 @@ const state = {
   nextTableNumber: 1,
   tables: [],
   tasks: [],
-  events: [],
   runningTasks: [],
   stationRefs: new Map(),
   roomRefs: new Map(),
   tableRefs: new Map(),
+  completedSignature: "",
   config: null,
   startTime: "18:00",
-  lastEventSignature: "",
 };
 
 function collectConfig() {
@@ -94,7 +93,6 @@ function resetKitchen() {
   state.nextTableNumber = 1;
   state.tables = [];
   state.tasks = [];
-  state.events = [];
   state.runningTasks = [];
   state.config = collectConfig();
   state.startTime = state.config.start_time;
@@ -102,10 +100,11 @@ function resetKitchen() {
   state.stationRefs.clear();
   state.roomRefs.clear();
   state.tableRefs.clear();
-  state.lastEventSignature = "";
+  state.completedSignature = "";
   renderMetrics();
   renderStations();
   renderRoom();
+  renderCompletedRecords();
   renderTables();
   renderEvents();
   updateBoard();
@@ -238,7 +237,13 @@ function renderRoom() {
   roomRoot.innerHTML = "";
   state.roomRefs.clear();
 
-  state.tables.forEach((table) => {
+  const activeTables = state.tables.filter((table) => !table.archived);
+  if (activeTables.length === 0) {
+    roomRoot.innerHTML = `<div class="room-empty">当前前场没有等待中的桌台，新的席面进入后会出现在这里。</div>`;
+    return;
+  }
+
+  activeTables.forEach((table) => {
     const plateMarkup = Array.from({ length: table.courses_total }, () => '<span class="plate waiting"></span>').join("");
     const roomTable = document.createElement("article");
     roomTable.className = "room-table";
@@ -264,17 +269,75 @@ function renderRoom() {
           <span class="room-course-chip muted">暂时没有</span>
         </div>
       </div>
+      <div class="room-actions">
+        <button class="ghost-button room-action" type="button" data-action="rush" data-table-id="${table.table_id}">催菜优先</button>
+        <button class="ghost-button room-action" type="button" data-action="add-dish" data-table-id="${table.table_id}">加一道菜</button>
+        <button class="ghost-button room-action" type="button" data-action="archive" data-table-id="${table.table_id}">确认离场</button>
+      </div>
     `;
+    roomTable.querySelectorAll(".room-action").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const action = button.dataset.action;
+        const tableId = button.dataset.tableId;
+        if (!tableId) return;
+        if (action === "rush") {
+          markTableRush(tableId);
+        } else if (action === "add-dish") {
+          await addDishToTable(tableId);
+        } else if (action === "archive") {
+          archiveTable(tableId);
+        }
+      });
+    });
     state.roomRefs.set(table.table_id, roomTable);
     roomRoot.appendChild(roomTable);
   });
+}
+
+function renderCompletedRecords() {
+  const completedTables = state.tables
+    .filter((table) => table.archived)
+    .sort((left, right) => (right.archived_at ?? 0) - (left.archived_at ?? 0));
+  const signature = completedTables.map((table) => `${table.table_id}:${table.archived_at ?? 0}`).join("|");
+  if (signature === state.completedSignature) {
+    return;
+  }
+
+  state.completedSignature = signature;
+  if (completedTables.length === 0) {
+    completedRoot.innerHTML = `<div class="completed-empty">完整出齐的桌台会沉到这里，方便前场只关注还在进行中的席面。</div>`;
+    return;
+  }
+
+  completedRoot.innerHTML = completedTables
+    .map(
+      (table) => `
+        <article class="completed-item">
+          <div class="completed-top">
+            <strong>${table.table_name}</strong>
+            <span class="mini-pill">${formatClock(state.startTime, table.archived_at ?? state.minute)} 离场归档</span>
+          </div>
+          <div class="completed-tags">
+            <span class="mini-pill">${table.diners} 位</span>
+            <span class="mini-pill">共 ${table.courses_total} 道菜</span>
+          </div>
+          <div class="completed-dishes">
+            ${table.courses
+              .filter((course) => course.status === "served")
+              .map((course) => `<span class="completed-dish-chip">${course.name}</span>`)
+              .join("")}
+          </div>
+        </article>
+      `
+    )
+    .join("");
 }
 
 function renderTables() {
   tablesRoot.innerHTML = "";
   state.tableRefs.clear();
 
-  state.tables.forEach((table) => {
+  state.tables.filter((table) => !table.archived).forEach((table) => {
     const card = document.createElement("article");
     card.className = "table-card";
     card.dataset.tableId = table.table_id;
@@ -317,28 +380,7 @@ function renderTables() {
 }
 
 function renderEvents() {
-  const recent = state.events.slice(-8).reverse();
-  const signature = recent.map((event) => `${event.minute}-${event.table_name}-${event.dish}`).join("|");
-  if (signature === state.lastEventSignature) {
-    return;
-  }
-  state.lastEventSignature = signature;
-
-  if (recent.length === 0) {
-    eventRoot.innerHTML = `<div class="event-item"><strong>厨房已开档</strong><div class="event-meta">等待新的桌台加入后厨流程。</div></div>`;
-    return;
-  }
-
-  eventRoot.innerHTML = recent
-    .map(
-      (event) => `
-        <article class="event-item">
-          <strong>${event.table_name} · ${event.dish}</strong>
-          <div class="event-meta">${formatClock(state.startTime, event.minute)} 送达 · ${event.course_label} · ${event.station_label}</div>
-        </article>
-      `
-    )
-    .join("");
+  return;
 }
 
 function findTask(taskId) {
@@ -347,6 +389,7 @@ function findTask(taskId) {
 
 function finishTasksForMinute() {
   const done = state.runningTasks.filter((task) => task.end_minute <= state.minute);
+  let roomNeedsRefresh = false;
   done.forEach((task) => {
     const table = state.tables.find((item) => item.table_id === task.table_id);
     if (!table) return;
@@ -361,15 +404,10 @@ function finishTasksForMinute() {
     }
     if (table.served_count >= table.courses_total) {
       table.completed = true;
+      table.completed_at = task.end_minute;
+      roomNeedsRefresh = true;
     }
-
-    state.events.push({
-      minute: task.end_minute,
-      table_name: table.table_name,
-      dish: task.name,
-      course_label: task.course_label,
-      station_label: task.station_label,
-    });
+    table.priority_boost = 0;
 
     const slot = state.stationSlots[task.station].find((item) => item.slotId === task.slot_id);
     if (slot) {
@@ -378,6 +416,9 @@ function finishTasksForMinute() {
   });
 
   state.runningTasks = state.runningTasks.filter((task) => task.end_minute > state.minute);
+  if (roomNeedsRefresh) {
+    renderRoom();
+  }
 }
 
 function getCurrentChefLoad() {
@@ -403,7 +444,9 @@ function computePriority(task, table, minServedCount) {
     COURSE_BIAS[task.course] -
     servedGap * 12.0 -
     runningPenalty -
-    task.duration * 0.08
+    task.duration * 0.08 +
+    (table.priority_boost || 0) +
+    (task.priority_boost || 0)
   );
 }
 
@@ -457,6 +500,7 @@ function scheduleForMinute() {
 
 function ensureTableVisuals() {
   renderRoom();
+  renderCompletedRecords();
   renderTables();
 }
 
@@ -491,6 +535,7 @@ function updateStations() {
 
 function updateRoom() {
   state.tables.forEach((table) => {
+    if (table.archived) return;
     const node = state.roomRefs.get(table.table_id);
     if (!node) return;
     const countNode = node.querySelector('[data-role="count"]');
@@ -498,6 +543,9 @@ function updateRoom() {
     const noteNode = node.querySelector('[data-role="note"]');
     const servedListNode = node.querySelector('[data-role="served-list"]');
     const cookingListNode = node.querySelector('[data-role="cooking-list"]');
+    const rushButton = node.querySelector('[data-action="rush"]');
+    const addDishButton = node.querySelector('[data-action="add-dish"]');
+    const archiveButton = node.querySelector('[data-action="archive"]');
     const plateNodes = [...platesNode.querySelectorAll(".plate")];
 
     countNode.textContent = `${table.served_count}/${table.courses_total}`;
@@ -536,24 +584,35 @@ function updateRoom() {
 
     if (table.completed) {
       node.classList.add("done");
-      noteNode.textContent = "这一桌已经完整出齐";
-      return;
+      noteNode.textContent = "这一桌已经完整出齐，等待确认离场";
+    } else {
+      node.classList.remove("done");
+      if (table.running_count > 0) {
+        noteNode.textContent = "这一桌正在连续出餐";
+      } else {
+        const waitAnchor = table.last_served_at ?? table.arrival_minute;
+        const waitMinutes = Math.max(0, state.minute - waitAnchor);
+        noteNode.textContent = table.served_count === 0 ? `已等待 ${waitMinutes} 分钟，首道待出` : `距上一道已过 ${waitMinutes} 分钟`;
+      }
     }
 
-    node.classList.remove("done");
-    if (table.running_count > 0) {
-      noteNode.textContent = "这一桌正在连续出餐";
-      return;
+    if (rushButton) {
+      rushButton.textContent = table.priority_boost > 0 ? "催菜已标记" : "催菜优先";
+      rushButton.disabled = table.completed;
     }
-
-    const waitAnchor = table.last_served_at ?? table.arrival_minute;
-    const waitMinutes = Math.max(0, state.minute - waitAnchor);
-    noteNode.textContent = table.served_count === 0 ? `已等待 ${waitMinutes} 分钟，首道待出` : `距上一道已过 ${waitMinutes} 分钟`;
+    if (addDishButton) {
+      addDishButton.disabled = table.archived;
+    }
+    if (archiveButton) {
+      archiveButton.disabled = !table.completed;
+      archiveButton.textContent = table.completed ? "确认离场" : "完成后离场";
+    }
   });
 }
 
 function updateTables() {
   state.tables.forEach((table) => {
+    if (table.archived) return;
     const node = state.tableRefs.get(table.table_id);
     if (!node) return;
 
@@ -565,9 +624,9 @@ function updateTables() {
     progressNode.style.width = `${(table.served_count / table.courses_total) * 100}%`;
 
     if (table.completed) {
-      statusNode.textContent = "已完成";
+      statusNode.textContent = "待离场";
       statusNode.className = "status-pill done";
-      summaryNode.textContent = `本桌已全部出齐，共 ${table.courses_total} 道菜`;
+      summaryNode.textContent = `本桌已全部出齐，共 ${table.courses_total} 道菜，等待人工确认离场`;
     } else if (table.running_count > 0) {
       statusNode.textContent = "出餐中";
       statusNode.className = "status-pill cooking";
@@ -593,6 +652,7 @@ function updateBoard() {
   renderMetrics();
   updateStations();
   updateRoom();
+  renderCompletedRecords();
   updateTables();
   renderEvents();
 }
@@ -613,6 +673,22 @@ async function fetchOrder(payload) {
   return response.json();
 }
 
+async function fetchExtraDish(payload) {
+  const response = await fetch("/api/kitchen-extra-dish", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error("追加菜品失败，请稍后重试。");
+  }
+
+  return response.json();
+}
+
 function normalizeIncomingOrder(order) {
   return {
     ...order,
@@ -621,8 +697,12 @@ function normalizeIncomingOrder(order) {
     running_count: 0,
     last_served_at: null,
     first_served_at: null,
+    completed_at: null,
     served_times: [],
     completed: false,
+    archived: false,
+    archived_at: null,
+    priority_boost: 0,
     courses: order.courses.map((course, index) => ({
       ...course,
       dish_index: index,
@@ -633,8 +713,67 @@ function normalizeIncomingOrder(order) {
       start_minute: null,
       end_minute: null,
       slot_id: null,
+      priority_boost: 0,
     })),
   };
+}
+
+function markTableRush(tableId) {
+  const table = state.tables.find((item) => item.table_id === tableId);
+  if (!table || table.archived || table.completed) return;
+  table.priority_boost = 24;
+  updateBoard();
+}
+
+function archiveTable(tableId) {
+  const table = state.tables.find((item) => item.table_id === tableId);
+  if (!table || !table.completed || table.archived) return;
+  table.archived = true;
+  table.archived_at = state.minute;
+  renderRoom();
+  renderCompletedRecords();
+  renderTables();
+  updateBoard();
+}
+
+async function addDishToTable(tableId) {
+  const table = state.tables.find((item) => item.table_id === tableId);
+  if (!table || table.archived) return;
+
+  loadingNode.classList.remove("hidden");
+  try {
+    const dish = await fetchExtraDish({
+      table_id: table.table_id,
+      table_name: table.table_name,
+      arrival_minute: state.minute,
+      dish_index: table.courses.length,
+      existing_dishes: table.courses.map((course) => course.name),
+      existing_course_meta: table.courses.map((course) => ({ course: course.course })),
+      request_profile: table.request_profile,
+    });
+
+    table.completed = false;
+    table.completed_at = null;
+    table.archived = false;
+    table.priority_boost = 16;
+    const normalizedDish = {
+      ...dish,
+      start_minute: null,
+      end_minute: null,
+      slot_id: null,
+      priority_boost: 10,
+    };
+    table.courses.push(normalizedDish);
+    table.courses_total += 1;
+    state.tasks.push(normalizedDish);
+    ensureTableVisuals();
+    scheduleForMinute();
+    updateBoard();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loadingNode.classList.add("hidden");
+  }
 }
 
 async function addRandomOrder() {
@@ -655,7 +794,7 @@ async function addRandomOrder() {
     scheduleForMinute();
     updateBoard();
   } catch (error) {
-    eventRoot.innerHTML = `<div class="event-item"><strong>加单失败</strong><div class="event-meta">${error.message}</div></div>`;
+    console.error(error);
   } finally {
     loadingNode.classList.add("hidden");
     addOrderButton.disabled = false;

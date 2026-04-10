@@ -1090,6 +1090,7 @@ def serialize_table_order_for_live(order: dict[str, Any]) -> dict[str, Any]:
         "budget": state["budget"],
         "preferences": state["preferences"],
         "restrictions": state["restrictions"],
+        "request_profile": order["request_payload"],
         "menu_title": order["menu"]["title"],
         "summary": order["menu"]["summary"],
         "courses": [
@@ -1125,6 +1126,89 @@ def generate_live_kitchen_order(payload: dict[str, Any]) -> dict[str, Any]:
     request_payload = build_random_request_payload(rng)
     order = build_table_order(table_number, arrival_minute, request_payload)
     return serialize_table_order_for_live(order)
+
+
+def choose_extra_course(request_data: dict[str, Any], existing_courses: list[str], rng: random.Random) -> str:
+    candidate_courses = ["seafood", "meat", "vegetable", "staple", "dessert", "poultry"]
+    if "no_seafood" in request_data["restrictions"]:
+        candidate_courses = [item for item in candidate_courses if item != "seafood"]
+
+    underused = [course for course in candidate_courses if existing_courses.count(course) == 0]
+    if underused:
+        return rng.choice(underused[:3] if len(underused) > 3 else underused)
+    return rng.choice(candidate_courses)
+
+
+def generate_live_extra_dish(payload: dict[str, Any]) -> dict[str, Any]:
+    table_id = str(payload.get("table_id", "T1")).strip() or "T1"
+    table_name = str(payload.get("table_name", "1号桌")).strip() or "1号桌"
+    arrival_minute = max(0, int(payload.get("arrival_minute", 0)))
+    dish_index = max(0, int(payload.get("dish_index", 0)))
+    existing_names = [str(item) for item in payload.get("existing_dishes", [])]
+    request_profile = normalize_request(payload.get("request_profile", {}))
+    rng = stable_rng(
+        {
+            "table_id": table_id,
+            "arrival_minute": arrival_minute,
+            "dish_index": dish_index,
+            "existing": existing_names,
+            "request_profile": request_profile,
+        }
+    )
+
+    target_course = choose_extra_course(
+        request_profile,
+        [item.get("course", "") for item in payload.get("existing_course_meta", []) if isinstance(item, dict)],
+        rng,
+    )
+
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for dish in DISHES:
+        if dish["name"] in existing_names:
+            continue
+        if not dish_is_allowed(dish, request_profile):
+            continue
+        score = score_dish(dish, request_profile, target_course, rng)
+        if score > 0:
+            candidates.append((score, dish))
+
+    if not candidates:
+        for dish in DISHES:
+            if dish["name"] in existing_names:
+                continue
+            if not dish_is_allowed(dish, request_profile):
+                continue
+            score = score_dish(dish, request_profile, dish["course"], rng)
+            if score > 0:
+                candidates.append((score, dish))
+
+    if not candidates:
+        raise ValueError("当前条件下没有可追加的菜品。")
+
+    picked = choose_from_top(candidates, rng)
+    profile = get_cooking_profile(picked)
+    task_id = f"{table_id}-D{dish_index + 1}"
+
+    return {
+        "task_id": task_id,
+        "table_id": table_id,
+        "table_name": table_name,
+        "arrival_minute": arrival_minute,
+        "dish_index": dish_index,
+        "name": picked["name"],
+        "course": picked["course"],
+        "course_label": COURSE_LABELS[picked["course"]],
+        "price": scaled_price(picked, request_profile["diners"]),
+        "description": picked["description"],
+        "station": profile["station"],
+        "station_label": STATION_LABELS[profile["station"]],
+        "duration": profile["duration"],
+        "chef_need": profile["chef_need"],
+        "heat": profile["heat"],
+        "target_offset": max(32, COURSE_TARGET_OFFSETS[picked["course"]] + dish_index * 2),
+        "earliest_start": arrival_minute,
+        "status": "queued",
+    }
 
 
 def summarize_kitchen_metrics(table_states: dict[str, dict[str, Any]], schedule: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1361,7 +1445,7 @@ class DemoHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path not in {"/api/generate-menu", "/api/kitchen-simulate", "/api/kitchen-order"}:
+        if parsed.path not in {"/api/generate-menu", "/api/kitchen-simulate", "/api/kitchen-order", "/api/kitchen-extra-dish"}:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
 
@@ -1373,6 +1457,8 @@ class DemoHandler(BaseHTTPRequestHandler):
                 result = generate_menu(payload)
             elif parsed.path == "/api/kitchen-order":
                 result = generate_live_kitchen_order(payload)
+            elif parsed.path == "/api/kitchen-extra-dish":
+                result = generate_live_extra_dish(payload)
             else:
                 result = simulate_kitchen_service(payload)
         except json.JSONDecodeError:
