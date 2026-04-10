@@ -135,7 +135,7 @@
             <section class="panel tables-panel">
               <div class="panel-heading compact">
                 <p class="section-kicker">05 / 桌台详情</p>
-                <h3>观察哪一桌在等，哪一桌在上</h3>
+                <h3>观察哪一桌在等，哪一桌在上，右键在制菜可校正时长</h3>
               </div>
               <div id="tables-root" class="tables-root"></div>
             </section>
@@ -150,6 +150,11 @@
           </section>
         </section>
       </main>
+    </div>
+
+    <div id="dish-context-menu" class="dish-context-menu hidden">
+      <button type="button" class="dish-context-option" data-action="serve-now">已出餐</button>
+      <button type="button" class="dish-context-option" data-action="delay-dish">延迟出餐</button>
     </div>
 
     <script src="/static/kitchen.js"></script>

@@ -47,6 +47,9 @@ const state = {
   completedSignature: "",
   config: null,
   startTime: "18:00",
+  activeDishMenuTaskId: null,
+  activeDishMenuNode: null,
+  activeDishMenuAnchor: null,
 };
 
 function collectConfig() {
@@ -356,6 +359,7 @@ function renderCompletedRecords() {
 }
 
 function renderTables() {
+  closeDishActionMenu();
   tablesRoot.innerHTML = "";
   state.tableRefs.clear();
 
@@ -391,8 +395,11 @@ function renderTables() {
       dish.dataset.taskId = course.task_id;
       dish.innerHTML = `
         <strong>${course.name}</strong>
-        <small>${course.course_label} · ${course.station_label} · ${course.duration} 分钟</small>
+        <small data-role="dish-meta">${course.course_label} · ${course.station_label} · ${course.duration} 分钟</small>
       `;
+      dish.addEventListener("click", (event) => {
+        handleDishChipClick(event, course.task_id);
+      });
       dishList.appendChild(dish);
     });
 
@@ -407,6 +414,66 @@ function renderEvents() {
 
 function findTask(taskId) {
   return state.tasks.find((task) => task.task_id === taskId);
+}
+
+function closeDishActionMenu() {
+  if (state.activeDishMenuAnchor) {
+    state.activeDishMenuAnchor.classList.remove("menu-open");
+  }
+  if (state.activeDishMenuNode) {
+    state.activeDishMenuNode.remove();
+  }
+  state.activeDishMenuTaskId = null;
+  state.activeDishMenuNode = null;
+  state.activeDishMenuAnchor = null;
+}
+
+function openDishActionMenu(taskId, anchorNode) {
+  closeDishActionMenu();
+  const task = findTask(taskId);
+  if (!task || task.status !== "cooking") return;
+
+  const menu = document.createElement("div");
+  menu.className = "dish-action-menu";
+  menu.innerHTML = `
+    <button class="dish-action-option" type="button" data-action="complete">已出餐</button>
+    <button class="dish-action-option" type="button" data-action="delay">延迟出餐</button>
+  `;
+  menu.querySelectorAll(".dish-action-option").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (button.dataset.action === "complete") {
+        finishTaskNow(taskId);
+      } else if (button.dataset.action === "delay") {
+        delayTask(taskId, 5);
+      }
+    });
+  });
+
+  anchorNode.appendChild(menu);
+  anchorNode.classList.add("menu-open");
+  state.activeDishMenuTaskId = taskId;
+  state.activeDishMenuNode = menu;
+  state.activeDishMenuAnchor = anchorNode;
+}
+
+function handleDishChipClick(event, taskId) {
+  event.stopPropagation();
+  const task = findTask(taskId);
+  const chip = event.currentTarget;
+  if (!task || !chip) {
+    closeDishActionMenu();
+    return;
+  }
+  if (task.status !== "cooking") {
+    closeDishActionMenu();
+    return;
+  }
+  if (state.activeDishMenuTaskId === taskId) {
+    closeDishActionMenu();
+    return;
+  }
+  openDishActionMenu(taskId, chip);
 }
 
 function findSlotById(slotId) {
@@ -447,38 +514,48 @@ function requeueTask(task, options = {}) {
   task.end_minute = null;
   task.slot_id = null;
   task.priority_boost = options.priorityBoost ?? 0;
+  task.delay_total = options.resetDelay ? 0 : task.delay_total || 0;
   task.earliest_start = Math.max(state.minute + (options.delayMinutes ?? 0), task.arrival_minute);
 
   recalculateTableProgress(table);
   table.priority_boost = Math.max(table.priority_boost || 0, options.tableBoost ?? 0);
 }
 
+function finalizeTask(task, finishMinute) {
+  const table = state.tables.find((item) => item.table_id === task.table_id);
+  if (!table) return false;
+
+  const actualFinishMinute = Math.max(task.start_minute ?? finishMinute, finishMinute);
+  task.status = "served";
+  task.end_minute = actualFinishMinute;
+  task.delay_total = 0;
+  table.running_count = Math.max(0, table.running_count - 1);
+  table.served_count += 1;
+  table.last_served_at = actualFinishMinute;
+  table.served_times.push(actualFinishMinute);
+  if (table.first_served_at === null) {
+    table.first_served_at = actualFinishMinute;
+  }
+  if (table.served_count >= table.courses_total) {
+    table.completed = true;
+    table.completed_at = actualFinishMinute;
+  }
+  table.priority_boost = 0;
+
+  const slot = task.slot_id ? state.stationSlots[task.station].find((item) => item.slotId === task.slot_id) : null;
+  if (slot) {
+    slot.currentTaskId = null;
+    slot.busyUntil = actualFinishMinute;
+  }
+  state.runningTasks = state.runningTasks.filter((item) => item.task_id !== task.task_id);
+  return table.completed;
+}
+
 function finishTasksForMinute() {
   const done = state.runningTasks.filter((task) => task.end_minute <= state.minute);
   let roomNeedsRefresh = false;
   done.forEach((task) => {
-    const table = state.tables.find((item) => item.table_id === task.table_id);
-    if (!table) return;
-
-    task.status = "served";
-    table.running_count = Math.max(0, table.running_count - 1);
-    table.served_count += 1;
-    table.last_served_at = task.end_minute;
-    table.served_times.push(task.end_minute);
-    if (table.first_served_at === null) {
-      table.first_served_at = task.end_minute;
-    }
-    if (table.served_count >= table.courses_total) {
-      table.completed = true;
-      table.completed_at = task.end_minute;
-      roomNeedsRefresh = true;
-    }
-    table.priority_boost = 0;
-
-    const slot = state.stationSlots[task.station].find((item) => item.slotId === task.slot_id);
-    if (slot) {
-      slot.currentTaskId = null;
-    }
+    roomNeedsRefresh = finalizeTask(task, task.end_minute) || roomNeedsRefresh;
   });
 
   state.runningTasks = state.runningTasks.filter((task) => task.end_minute > state.minute);
@@ -707,6 +784,11 @@ function updateRoom() {
 }
 
 function updateTables() {
+  const activeMenuTask = state.activeDishMenuTaskId ? findTask(state.activeDishMenuTaskId) : null;
+  if (state.activeDishMenuTaskId && (!activeMenuTask || activeMenuTask.status !== "cooking")) {
+    closeDishActionMenu();
+  }
+
   state.tables.forEach((table) => {
     if (table.archived) return;
     const node = state.tableRefs.get(table.table_id);
@@ -737,8 +819,20 @@ function updateTables() {
 
     dishes.forEach((dishNode) => {
       const task = findTask(dishNode.dataset.taskId);
+      const metaNode = dishNode.querySelector('[data-role="dish-meta"]');
       dishNode.classList.remove("queued", "cooking", "served");
       dishNode.classList.add(task.status);
+      dishNode.classList.toggle("interactive", task.status === "cooking");
+      if (metaNode) {
+        if (task.status === "cooking") {
+          const delayedLabel = task.delay_total ? ` · 已延后 ${task.delay_total} 分` : "";
+          metaNode.textContent = `${task.course_label} · ${task.station_label} · 预计 ${formatClock(state.startTime, task.end_minute)} 出餐${delayedLabel}`;
+        } else if (task.status === "served") {
+          metaNode.textContent = `${task.course_label} · ${task.station_label} · ${formatClock(state.startTime, task.end_minute)} 已上桌`;
+        } else {
+          metaNode.textContent = `${task.course_label} · ${task.station_label} · ${task.duration} 分钟`;
+        }
+      }
     });
   });
 }
@@ -811,6 +905,7 @@ function normalizeIncomingOrder(order) {
       end_minute: null,
       slot_id: null,
       priority_boost: 0,
+      delay_total: 0,
     })),
   };
 }
@@ -838,6 +933,31 @@ function refireLastServedDish(tableId) {
     tableBoost: 18,
   });
   scheduleForMinute();
+  updateBoard();
+}
+
+function finishTaskNow(taskId) {
+  const task = findTask(taskId);
+  if (!task || task.status !== "cooking") return;
+  closeDishActionMenu();
+  const roomNeedsRefresh = finalizeTask(task, state.minute);
+  if (roomNeedsRefresh) {
+    renderRoom();
+  }
+  scheduleForMinute();
+  updateBoard();
+}
+
+function delayTask(taskId, minutes = 5) {
+  const task = findTask(taskId);
+  if (!task || task.status !== "cooking") return;
+  const slot = task.slot_id ? findSlotById(task.slot_id) : null;
+  task.end_minute += minutes;
+  task.delay_total = (task.delay_total || 0) + minutes;
+  if (slot) {
+    slot.busyUntil = task.end_minute;
+  }
+  closeDishActionMenu();
   updateBoard();
 }
 
@@ -917,6 +1037,7 @@ async function addDishToTable(tableId) {
       end_minute: null,
       slot_id: null,
       priority_boost: 10,
+      delay_total: 0,
     };
     table.courses.push(normalizedDish);
     table.courses_total += 1;
@@ -986,6 +1107,18 @@ chefMinusButton?.addEventListener("click", () => {
 
 chefPlusButton?.addEventListener("click", () => {
   adjustChefCount(1);
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    closeDishActionMenu();
+    return;
+  }
+  if (target.closest(".dish-action-menu") || target.closest(".dish-chip.interactive")) {
+    return;
+  }
+  closeDishActionMenu();
 });
 
 resetKitchen();

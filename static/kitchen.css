@@ -628,11 +628,26 @@
   border-radius: 18px;
   border: 1px solid rgba(67, 86, 77, 0.1);
   background: rgba(248, 242, 232, 0.88);
+  position: relative;
+  overflow: visible;
   transition: transform 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .dish-chip small {
   color: var(--muted);
+}
+
+.dish-chip.interactive {
+  cursor: pointer;
+}
+
+.dish-chip.interactive::after {
+  content: "点击调整";
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 11px;
+  color: rgba(34, 67, 60, 0.8);
 }
 
 .dish-chip.cooking {
@@ -642,9 +657,43 @@
   box-shadow: 0 12px 18px rgba(29, 51, 46, 0.08);
 }
 
+.dish-chip.menu-open {
+  z-index: 8;
+}
+
 .dish-chip.served {
   background: rgba(156, 115, 66, 0.14);
   border-color: rgba(156, 115, 66, 0.2);
+}
+
+.dish-action-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 132px;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(67, 86, 77, 0.14);
+  background: rgba(255, 252, 246, 0.98);
+  box-shadow: 0 18px 32px rgba(29, 51, 46, 0.14);
+}
+
+.dish-action-option {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(244, 237, 225, 0.9);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dish-action-option:hover {
+  background: rgba(44, 74, 66, 0.14);
+  color: #22433c;
 }
 
 .status-pill.waiting {
