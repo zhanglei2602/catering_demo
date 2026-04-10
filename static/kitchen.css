@@ -160,6 +160,40 @@
   animation: pulse 1.6s infinite;
 }
 
+.incident-toolbar {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(67, 86, 77, 0.12);
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.incident-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.incident-label {
+  color: #6b5a3f;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.incident-button {
+  min-width: 88px;
+}
+
+.incident-hint {
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
 .kitchen-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -279,6 +313,13 @@
   box-shadow: 0 16px 32px rgba(29, 51, 46, 0.12);
 }
 
+.station-slot.unavailable {
+  background: rgba(229, 224, 214, 0.68);
+  border-style: dashed;
+  box-shadow: none;
+  transform: none;
+}
+
 .slot-top,
 .table-top,
 .table-meta-row,
@@ -303,6 +344,15 @@
 .slot-main {
   display: grid;
   gap: 4px;
+}
+
+.slot-actions {
+  margin: 10px 0 8px;
+}
+
+.slot-action {
+  width: 100%;
+  min-height: 38px;
 }
 
 .slot-dish {
@@ -654,7 +704,8 @@
   .playback-top,
   .table-top,
   .table-meta-row,
-  .room-table-top {
+  .room-table-top,
+  .incident-group {
     flex-direction: column;
     align-items: flex-start;
   }

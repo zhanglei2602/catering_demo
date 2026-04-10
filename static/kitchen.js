@@ -10,6 +10,9 @@ const playToggleButton = document.querySelector("#play-toggle");
 const speedSelect = document.querySelector("#playback-speed");
 const addOrderButton = document.querySelector("#add-order-button");
 const resetKitchenButton = document.querySelector("#reset-kitchen-button");
+const chefMinusButton = document.querySelector("#chef-minus");
+const chefPlusButton = document.querySelector("#chef-plus");
+const chefLiveBadge = document.querySelector("#chef-live-badge");
 
 const STATION_LABELS = {
   cold: "冷菜台",
@@ -65,24 +68,28 @@ function createSlots(config) {
       station: "hot",
       busyUntil: 0,
       currentTaskId: null,
+      disabled: false,
     })),
     cold: Array.from({ length: config.cold_stations }, (_, index) => ({
       slotId: `cold-${index + 1}`,
       station: "cold",
       busyUntil: 0,
       currentTaskId: null,
+      disabled: false,
     })),
     soup: Array.from({ length: config.soup_stations }, (_, index) => ({
       slotId: `soup-${index + 1}`,
       station: "soup",
       busyUntil: 0,
       currentTaskId: null,
+      disabled: false,
     })),
     steam: Array.from({ length: config.steamers }, (_, index) => ({
       slotId: `steam-${index + 1}`,
       station: "steam",
       busyUntil: 0,
       currentTaskId: null,
+      disabled: false,
     })),
   };
 }
@@ -197,6 +204,12 @@ function renderMetrics() {
   );
 }
 
+function updateChefLiveBadge() {
+  if (!chefLiveBadge || !state.config) return;
+  const busyChefs = getCurrentChefLoad();
+  chefLiveBadge.textContent = `当前 ${state.config.chefs} 名厨师 · 忙碌 ${busyChefs} 名`;
+}
+
 function renderStations() {
   stationRoot.innerHTML = "";
   state.stationRefs.clear();
@@ -224,8 +237,14 @@ function renderStations() {
           <p class="slot-dish">等待接单</p>
           <p class="slot-meta">当前没有菜在这个工位上</p>
         </div>
+        <div class="slot-actions">
+          <button class="ghost-button slot-action" type="button" data-slot-id="${slot.slotId}">停用工位</button>
+        </div>
         <div class="progress-track"><div class="progress-fill"></div></div>
       `;
+      article.querySelector(".slot-action")?.addEventListener("click", () => {
+        toggleSlotAvailability(slot.slotId);
+      });
       state.stationRefs.set(slot.slotId, article);
       slotList.appendChild(article);
     });
@@ -272,6 +291,7 @@ function renderRoom() {
       <div class="room-actions">
         <button class="ghost-button room-action" type="button" data-action="rush" data-table-id="${table.table_id}">催菜优先</button>
         <button class="ghost-button room-action" type="button" data-action="add-dish" data-table-id="${table.table_id}">加一道菜</button>
+        <button class="ghost-button room-action" type="button" data-action="refire" data-table-id="${table.table_id}">退上一道重做</button>
         <button class="ghost-button room-action" type="button" data-action="archive" data-table-id="${table.table_id}">确认离场</button>
       </div>
     `;
@@ -284,6 +304,8 @@ function renderRoom() {
           markTableRush(tableId);
         } else if (action === "add-dish") {
           await addDishToTable(tableId);
+        } else if (action === "refire") {
+          refireLastServedDish(tableId);
         } else if (action === "archive") {
           archiveTable(tableId);
         }
@@ -387,6 +409,50 @@ function findTask(taskId) {
   return state.tasks.find((task) => task.task_id === taskId);
 }
 
+function findSlotById(slotId) {
+  return Object.values(state.stationSlots)
+    .flat()
+    .find((slot) => slot.slotId === slotId);
+}
+
+function recalculateTableProgress(table) {
+  const servedCourses = table.courses
+    .filter((course) => course.status === "served" && typeof course.end_minute === "number")
+    .sort((left, right) => left.end_minute - right.end_minute);
+
+  table.served_count = servedCourses.length;
+  table.first_served_at = servedCourses.length ? servedCourses[0].end_minute : null;
+  table.last_served_at = servedCourses.length ? servedCourses[servedCourses.length - 1].end_minute : null;
+  table.completed = table.served_count >= table.courses_total;
+  table.completed_at = table.completed ? table.last_served_at : null;
+  table.served_times = servedCourses.map((course) => course.end_minute);
+}
+
+function requeueTask(task, options = {}) {
+  const table = state.tables.find((item) => item.table_id === task.table_id);
+  if (!table) return;
+
+  if (task.status === "cooking") {
+    table.running_count = Math.max(0, table.running_count - 1);
+    state.runningTasks = state.runningTasks.filter((item) => item.task_id !== task.task_id);
+    const currentSlot = task.slot_id ? findSlotById(task.slot_id) : null;
+    if (currentSlot) {
+      currentSlot.currentTaskId = null;
+      currentSlot.busyUntil = state.minute;
+    }
+  }
+
+  task.status = "queued";
+  task.start_minute = null;
+  task.end_minute = null;
+  task.slot_id = null;
+  task.priority_boost = options.priorityBoost ?? 0;
+  task.earliest_start = Math.max(state.minute + (options.delayMinutes ?? 0), task.arrival_minute);
+
+  recalculateTableProgress(table);
+  table.priority_boost = Math.max(table.priority_boost || 0, options.tableBoost ?? 0);
+}
+
 function finishTasksForMinute() {
   const done = state.runningTasks.filter((task) => task.end_minute <= state.minute);
   let roomNeedsRefresh = false;
@@ -426,7 +492,7 @@ function getCurrentChefLoad() {
 }
 
 function selectFreeSlot(stationKey) {
-  return state.stationSlots[stationKey].find((slot) => slot.busyUntil <= state.minute) || null;
+  return state.stationSlots[stationKey].find((slot) => !slot.disabled && slot.busyUntil <= state.minute) || null;
 }
 
 function computePriority(task, table, minServedCount) {
@@ -506,20 +572,43 @@ function ensureTableVisuals() {
 
 function updateStations() {
   state.stationRefs.forEach((node, slotId) => {
-    const slot = Object.values(state.stationSlots).flat().find((item) => item.slotId === slotId);
+    const slot = findSlotById(slotId);
     const statusNode = node.querySelector(".status-pill");
     const dishNode = node.querySelector(".slot-dish");
     const metaNode = node.querySelector(".slot-meta");
     const fillNode = node.querySelector(".progress-fill");
+    const actionButton = node.querySelector(".slot-action");
     const task = slot?.currentTaskId ? findTask(slot.currentTaskId) : null;
 
-    if (!slot || !task || task.status !== "cooking") {
+    if (!slot) {
+      return;
+    }
+
+    if (slot.disabled) {
+      node.classList.remove("active");
+      node.classList.add("unavailable");
+      statusNode.textContent = "停用中";
+      statusNode.className = "status-pill done";
+      dishNode.textContent = "工位已暂停";
+      metaNode.textContent = "当前不再接收新任务，恢复后才能重新分配。";
+      fillNode.style.width = "0%";
+      if (actionButton) {
+        actionButton.textContent = "恢复工位";
+      }
+      return;
+    }
+
+    node.classList.remove("unavailable");
+    if (!task || task.status !== "cooking") {
       node.classList.remove("active");
       statusNode.textContent = "空闲";
       statusNode.className = "status-pill";
       dishNode.textContent = "等待接单";
       metaNode.textContent = "当前没有菜在这个工位上";
       fillNode.style.width = "0%";
+      if (actionButton) {
+        actionButton.textContent = "停用工位";
+      }
       return;
     }
 
@@ -530,6 +619,9 @@ function updateStations() {
     dishNode.textContent = task.name;
     metaNode.textContent = `${task.course_label} · ${task.chef_need} 位厨师 · 预计 ${formatClock(state.startTime, task.end_minute)} 出菜`;
     fillNode.style.width = `${Math.max(6, Math.min(100, progress))}%`;
+    if (actionButton) {
+      actionButton.textContent = "停用工位";
+    }
   });
 }
 
@@ -545,6 +637,7 @@ function updateRoom() {
     const cookingListNode = node.querySelector('[data-role="cooking-list"]');
     const rushButton = node.querySelector('[data-action="rush"]');
     const addDishButton = node.querySelector('[data-action="add-dish"]');
+    const refireButton = node.querySelector('[data-action="refire"]');
     const archiveButton = node.querySelector('[data-action="archive"]');
     const plateNodes = [...platesNode.querySelectorAll(".plate")];
 
@@ -603,6 +696,9 @@ function updateRoom() {
     if (addDishButton) {
       addDishButton.disabled = table.archived;
     }
+    if (refireButton) {
+      refireButton.disabled = servedCourses.length === 0 || table.archived;
+    }
     if (archiveButton) {
       archiveButton.disabled = !table.completed;
       archiveButton.textContent = table.completed ? "确认离场" : "完成后离场";
@@ -649,6 +745,7 @@ function updateTables() {
 
 function updateBoard() {
   clockNode.textContent = formatClock(state.startTime, state.minute);
+  updateChefLiveBadge();
   renderMetrics();
   updateStations();
   updateRoom();
@@ -722,6 +819,64 @@ function markTableRush(tableId) {
   const table = state.tables.find((item) => item.table_id === tableId);
   if (!table || table.archived || table.completed) return;
   table.priority_boost = 24;
+  updateBoard();
+}
+
+function refireLastServedDish(tableId) {
+  const table = state.tables.find((item) => item.table_id === tableId);
+  if (!table || table.archived) return;
+
+  const lastServedDish = table.courses
+    .filter((course) => course.status === "served" && typeof course.end_minute === "number")
+    .sort((left, right) => right.end_minute - left.end_minute)[0];
+
+  if (!lastServedDish) return;
+
+  requeueTask(lastServedDish, {
+    delayMinutes: 1,
+    priorityBoost: 26,
+    tableBoost: 18,
+  });
+  scheduleForMinute();
+  updateBoard();
+}
+
+function toggleSlotAvailability(slotId) {
+  const slot = findSlotById(slotId);
+  if (!slot) return;
+
+  if (slot.disabled) {
+    slot.disabled = false;
+    slot.busyUntil = state.minute;
+    scheduleForMinute();
+    updateBoard();
+    return;
+  }
+
+  const task = slot.currentTaskId ? findTask(slot.currentTaskId) : null;
+  if (task && task.status === "cooking") {
+    requeueTask(task, {
+      delayMinutes: 2,
+      priorityBoost: 18,
+      tableBoost: 10,
+    });
+  }
+  slot.disabled = true;
+  slot.currentTaskId = null;
+  slot.busyUntil = state.minute;
+  updateBoard();
+}
+
+function adjustChefCount(delta) {
+  if (!state.config) return;
+  const nextChefCount = Math.max(1, Math.min(10, state.config.chefs + delta));
+  if (nextChefCount === state.config.chefs) return;
+  state.config.chefs = nextChefCount;
+  const chefInput = form.querySelector('input[name="chefs"]');
+  if (chefInput) {
+    chefInput.value = String(nextChefCount);
+  }
+  scheduleForMinute();
   updateBoard();
 }
 
@@ -823,6 +978,14 @@ addOrderButton.addEventListener("click", async () => {
 
 resetKitchenButton.addEventListener("click", () => {
   resetKitchen();
+});
+
+chefMinusButton?.addEventListener("click", () => {
+  adjustChefCount(-1);
+});
+
+chefPlusButton?.addEventListener("click", () => {
+  adjustChefCount(1);
 });
 
 resetKitchen();

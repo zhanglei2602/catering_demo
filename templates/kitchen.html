@@ -13,10 +13,6 @@
         <div>
           <p class="eyebrow">LIVE SERVICE ORCHESTRATION</p>
           <h1>后厨实时调度</h1>
-          <p class="hero-text">
-            厨房会持续运转，时钟不会停。只有当新的菜单在当前时刻进入后厨，
-            调度器才会基于现有资源、工位占用和各桌等待情况，决定下一道该先做给谁。
-          </p>
         </div>
         <div class="kitchen-links">
           <a href="/" class="kitchen-link">菜单定制页</a>
@@ -102,6 +98,16 @@
                 </select>
               </label>
               <div class="live-badge">持续营业中</div>
+            </div>
+
+            <div class="incident-toolbar">
+              <div class="incident-group">
+                <span class="incident-label">人工干预</span>
+                <button id="chef-minus" class="ghost-button incident-button" type="button">厨师 -1</button>
+                <button id="chef-plus" class="ghost-button incident-button" type="button">厨师 +1</button>
+                <span id="chef-live-badge" class="mini-pill">当前 4 名厨师</span>
+              </div>
+              <div class="incident-hint">工位停用/恢复在后厨工位里直接点，退菜重做在前场桌面每桌卡片里操作。</div>
             </div>
 
             <div id="metrics-root" class="kitchen-metrics"></div>
