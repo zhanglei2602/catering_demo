@@ -44,6 +44,7 @@ const state = {
   tableRefs: new Map(),
   config: null,
   startTime: "18:00",
+  lastEventSignature: "",
 };
 
 function collectConfig() {
@@ -101,6 +102,7 @@ function resetKitchen() {
   state.stationRefs.clear();
   state.roomRefs.clear();
   state.tableRefs.clear();
+  state.lastEventSignature = "";
   renderMetrics();
   renderStations();
   renderRoom();
@@ -237,6 +239,7 @@ function renderRoom() {
   state.roomRefs.clear();
 
   state.tables.forEach((table) => {
+    const plateMarkup = Array.from({ length: table.courses_total }, () => '<span class="plate waiting"></span>').join("");
     const roomTable = document.createElement("article");
     roomTable.className = "room-table";
     roomTable.innerHTML = `
@@ -246,7 +249,7 @@ function renderRoom() {
       </div>
       <div class="room-disc">
         <div class="room-center" data-role="count">${table.served_count}/${table.courses_total}</div>
-        <div class="plate-ring" data-role="plates"></div>
+        <div class="plate-ring" data-role="plates">${plateMarkup}</div>
       </div>
       <div class="room-note" data-role="note">刚刚入单，等待第一道菜</div>
       <div class="room-course-block">
@@ -315,6 +318,12 @@ function renderTables() {
 
 function renderEvents() {
   const recent = state.events.slice(-8).reverse();
+  const signature = recent.map((event) => `${event.minute}-${event.table_name}-${event.dish}`).join("|");
+  if (signature === state.lastEventSignature) {
+    return;
+  }
+  state.lastEventSignature = signature;
+
   if (recent.length === 0) {
     eventRoot.innerHTML = `<div class="event-item"><strong>厨房已开档</strong><div class="event-meta">等待新的桌台加入后厨流程。</div></div>`;
     return;
@@ -489,30 +498,41 @@ function updateRoom() {
     const noteNode = node.querySelector('[data-role="note"]');
     const servedListNode = node.querySelector('[data-role="served-list"]');
     const cookingListNode = node.querySelector('[data-role="cooking-list"]');
+    const plateNodes = [...platesNode.querySelectorAll(".plate")];
 
     countNode.textContent = `${table.served_count}/${table.courses_total}`;
     const cookingCourses = table.courses.filter((course) => course.status === "cooking");
     const servedCourses = table.courses.filter((course) => course.status === "served");
-    const plates = Array.from({ length: table.courses_total }, (_, index) => {
-      let plateClass = "plate waiting";
-      if (index < table.served_count) plateClass = "plate served";
-      else if (cookingCourses.some((course) => course.dish_index === index)) plateClass = "plate cooking";
-      return `<span class="${plateClass}"></span>`;
-    }).join("");
-    platesNode.innerHTML = plates;
+    const cookingIndexes = new Set(cookingCourses.map((course) => course.dish_index));
+    plateNodes.forEach((plateNode, index) => {
+      let nextClass = "plate waiting";
+      if (index < table.served_count) nextClass = "plate served";
+      else if (cookingIndexes.has(index)) nextClass = "plate cooking";
+      if (plateNode.className !== nextClass) {
+        plateNode.className = nextClass;
+      }
+    });
 
-    servedListNode.innerHTML = servedCourses.length
-      ? servedCourses
-          .slice(-4)
-          .map((course) => `<span class="room-course-chip served">${course.name}</span>`)
-          .join("")
-      : `<span class="room-course-chip muted">尚未上菜</span>`;
+    const servedSignature = servedCourses.map((course) => course.name).join("|");
+    if (servedListNode.dataset.signature !== servedSignature) {
+      servedListNode.dataset.signature = servedSignature;
+      servedListNode.innerHTML = servedCourses.length
+        ? servedCourses
+            .slice(-4)
+            .map((course) => `<span class="room-course-chip served">${course.name}</span>`)
+            .join("")
+        : `<span class="room-course-chip muted">尚未上菜</span>`;
+    }
 
-    cookingListNode.innerHTML = cookingCourses.length
-      ? cookingCourses
-          .map((course) => `<span class="room-course-chip cooking">${course.name}</span>`)
-          .join("")
-      : `<span class="room-course-chip muted">暂时没有</span>`;
+    const cookingSignature = cookingCourses.map((course) => course.name).join("|");
+    if (cookingListNode.dataset.signature !== cookingSignature) {
+      cookingListNode.dataset.signature = cookingSignature;
+      cookingListNode.innerHTML = cookingCourses.length
+        ? cookingCourses
+            .map((course) => `<span class="room-course-chip cooking">${course.name}</span>`)
+            .join("")
+        : `<span class="room-course-chip muted">暂时没有</span>`;
+    }
 
     if (table.completed) {
       node.classList.add("done");
