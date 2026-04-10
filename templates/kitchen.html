@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>云汀私宴 · 后厨实时调度</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/kitchen.css" />
+  </head>
+  <body>
+    <div class="page-shell kitchen-shell">
+      <header class="kitchen-hero">
+        <div>
+          <p class="eyebrow">LIVE SERVICE ORCHESTRATION</p>
+          <h1>后厨实时调度</h1>
+          <p class="hero-text">
+            厨房会持续运转，时钟不会停。只有当新的菜单在当前时刻进入后厨，
+            调度器才会基于现有资源、工位占用和各桌等待情况，决定下一道该先做给谁。
+          </p>
+        </div>
+        <div class="kitchen-links">
+          <a href="/" class="kitchen-link">菜单定制页</a>
+          <a href="/kitchen" class="kitchen-link active">后厨调度页</a>
+        </div>
+      </header>
+
+      <main class="kitchen-layout">
+        <aside class="panel kitchen-config-panel">
+          <div class="panel-heading">
+            <p class="section-kicker">01 / 厨房设置</p>
+            <h3>先把今晚的后厨资源摆好</h3>
+          </div>
+
+          <form id="kitchen-form" class="menu-form">
+            <label class="field">
+              <span>晚市起始时间</span>
+              <input type="time" name="start_time" value="18:00" />
+            </label>
+
+            <div class="resource-grid">
+              <label class="field">
+                <span>厨师人数</span>
+                <input type="number" name="chefs" min="2" max="10" value="4" />
+              </label>
+              <label class="field">
+                <span>冷菜台</span>
+                <input type="number" name="cold_stations" min="1" max="4" value="1" />
+              </label>
+              <label class="field">
+                <span>热菜灶</span>
+                <input type="number" name="hot_stations" min="1" max="6" value="2" />
+              </label>
+              <label class="field">
+                <span>炖煮炉</span>
+                <input type="number" name="soup_stations" min="1" max="3" value="1" />
+              </label>
+              <label class="field">
+                <span>蒸箱</span>
+                <input type="number" name="steamers" min="1" max="3" value="1" />
+              </label>
+            </div>
+
+            <button class="submit-button" type="submit">应用配置并重开晚市</button>
+          </form>
+
+          <div class="live-actions">
+            <button id="add-order-button" class="submit-button secondary" type="button">加入随机一桌</button>
+            <button id="reset-kitchen-button" class="ghost-button" type="button">清空重开</button>
+          </div>
+
+          <div class="tips-card">
+            <h4>这页现在怎么用</h4>
+            <p>页面打开后厨房会持续计时。</p>
+            <p>每点一次“加入随机一桌”，就会在当前时刻生成一桌新菜单并进入排队。</p>
+            <p>系统不会优先把一桌一次性上满，而是尽量平衡各桌等待与出餐节奏。</p>
+          </div>
+        </aside>
+
+        <section class="kitchen-main">
+          <section class="panel playback-panel">
+            <div class="playback-top">
+              <div>
+                <p class="section-kicker">02 / 实时厨房</p>
+                <h3>后厨和前场一起动起来</h3>
+              </div>
+              <div class="clock-card">
+                <span>当前营业时间</span>
+                <strong id="sim-clock">18:00</strong>
+              </div>
+            </div>
+
+            <div id="sim-loading" class="loading-state hidden">正在准备厨房，请稍等片刻…</div>
+
+            <div class="playback-controls">
+              <button id="play-toggle" class="ghost-button" type="button">暂停</button>
+              <label class="speed-field">
+                <span>速度</span>
+                <select id="playback-speed">
+                  <option value="900">1x</option>
+                  <option value="500">2x</option>
+                  <option value="260">4x</option>
+                </select>
+              </label>
+              <div class="live-badge">持续营业中</div>
+            </div>
+
+            <div id="metrics-root" class="kitchen-metrics"></div>
+          </section>
+
+          <section class="service-stage">
+            <section class="panel stage-panel">
+              <div class="panel-heading compact">
+                <p class="section-kicker">03 / 后厨工位</p>
+                <h3>现在锅上、蒸箱里和冷台上都在做什么</h3>
+              </div>
+              <div id="station-root" class="station-root"></div>
+            </section>
+
+            <section class="panel room-panel">
+              <div class="panel-heading compact">
+                <p class="section-kicker">04 / 前场桌面</p>
+                <h3>看每桌现在吃到第几道了</h3>
+              </div>
+              <div id="room-root" class="room-root"></div>
+            </section>
+          </section>
+
+          <div class="kitchen-board">
+            <section class="panel feed-panel">
+              <div class="panel-heading compact">
+                <p class="section-kicker">05 / 出餐流</p>
+                <h3>刚刚送出去的菜</h3>
+              </div>
+              <div id="event-root" class="event-root"></div>
+            </section>
+
+            <section class="panel tables-panel">
+              <div class="panel-heading compact">
+                <p class="section-kicker">06 / 桌台详情</p>
+                <h3>观察哪一桌在等，哪一桌在上</h3>
+              </div>
+              <div id="tables-root" class="tables-root"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/kitchen.js"></script>
+  </body>
+</html>

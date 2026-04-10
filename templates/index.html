@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>云汀私宴 · 定制菜单</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">YUNTING PRIVATE DINING</p>
+          <h1>云汀私宴<br />定制菜单</h1>
+          <p class="hero-text">
+            根据人数、预算、口味偏好、用餐场景与忌口条件，
+            为今晚这桌私宴安排一份更贴近真实待客节奏的菜单，并附上菜品介绍、席面风格与上桌表达。
+          </p>
+          <div class="hero-tags">
+            <span>时令鲜味</span>
+            <span>私房火候</span>
+            <span>场景化推荐</span>
+            <span>可解释菜单</span>
+          </div>
+        </div>
+        <div class="hero-card">
+          <p class="hero-card-label">Chef's Arrangement</p>
+          <h2>让每一桌私宴都有自己的节奏和记忆点</h2>
+          <p>
+            不只是列出菜名，而是从待客场景、人数与口味出发，
+            先定席面风格，再安排主菜重心、冷热起伏和收尾方式。
+          </p>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel form-panel">
+          <div class="panel-heading">
+            <p class="section-kicker">01 / 输入条件</p>
+            <h3>告诉我们今晚想怎么吃</h3>
+          </div>
+
+          <form id="menu-form" class="menu-form">
+            <label class="field">
+              <span>用餐人数</span>
+              <input type="number" name="diners" min="2" max="12" value="4" />
+            </label>
+
+            <label class="field">
+              <span>用餐场景</span>
+              <select name="occasion">
+                <option value="family">家宴</option>
+                <option value="business">商务宴请</option>
+                <option value="date">纪念日晚餐</option>
+                <option value="birthday">庆生聚餐</option>
+                <option value="friends">朋友聚会</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>预算风格</span>
+              <select name="budget">
+                <option value="signature">招牌体验</option>
+                <option value="comfort">舒心私宴</option>
+                <option value="premium">雅宴款待</option>
+                <option value="chef">主厨定制</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>惊喜程度</span>
+              <select name="surprise">
+                <option value="balanced">平衡一些</option>
+                <option value="classic">传统稳妥</option>
+                <option value="adventurous">更有新意</option>
+              </select>
+            </label>
+
+            <fieldset class="field checkbox-group">
+              <legend>口味偏好</legend>
+              <label><input type="checkbox" name="preferences" value="fresh" checked />鲜香清雅</label>
+              <label><input type="checkbox" name="preferences" value="cantonese" checked />粤式经典</label>
+              <label><input type="checkbox" name="preferences" value="spicy" />香辣过瘾</label>
+              <label><input type="checkbox" name="preferences" value="creative" />创意融合</label>
+            </fieldset>
+
+            <fieldset class="field checkbox-group">
+              <legend>忌口或要求</legend>
+              <label><input type="checkbox" name="restrictions" value="no_spicy" />不吃辣</label>
+              <label><input type="checkbox" name="restrictions" value="no_seafood" />不要海鲜</label>
+              <label><input type="checkbox" name="restrictions" value="no_beef" />不吃牛肉</label>
+              <label><input type="checkbox" name="restrictions" value="light" />少油清淡</label>
+            </fieldset>
+
+            <label class="field">
+              <span>补充备注</span>
+              <textarea
+                name="notes"
+                rows="4"
+                placeholder="例如：希望有一道招牌鸡、老人偏爱清蒸类、想要一道适合拍照的菜。"
+              ></textarea>
+            </label>
+
+            <button class="submit-button" type="submit">生成今晚的私房菜单</button>
+          </form>
+        </section>
+
+        <section class="panel result-panel">
+          <div class="panel-heading">
+            <p class="section-kicker">02 / 菜单结果</p>
+            <h3>今晚这桌私房菜席面</h3>
+          </div>
+
+          <div id="loading-state" class="loading-state hidden">正在为今晚这桌菜安排席面，请稍等片刻…</div>
+
+          <div id="empty-state" class="empty-state">
+            <p>右侧会展示一整套菜单，包括标题、菜单故事、每道菜的介绍，以及主厨备注。</p>
+          </div>
+
+          <div id="result-root" class="result-root hidden"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="result-template">
+      <article class="menu-sheet">
+        <div class="menu-header">
+          <div>
+            <p class="sheet-eyebrow">PRIVATE MENU CURATION</p>
+            <h2 class="menu-title"></h2>
+            <p class="menu-subtitle"></p>
+          </div>
+          <div class="price-card">
+            <p>整桌预估</p>
+            <strong class="estimated-total"></strong>
+            <span class="per-person"></span>
+          </div>
+        </div>
+
+        <div class="request-summary"></div>
+        <p class="menu-summary"></p>
+
+        <div class="highlight-strip"></div>
+        <div class="course-grid"></div>
+
+        <div class="notes-grid">
+          <section class="notes-card">
+            <h4>主厨备注</h4>
+            <ul class="chef-notes"></ul>
+          </section>
+          <section class="notes-card">
+            <h4>本次输入</h4>
+            <div class="request-tags"></div>
+          </section>
+        </div>
+      </article>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
